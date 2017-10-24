@@ -2,6 +2,7 @@ Option Explicit
 
 Type IDDobj
   name As String
+  nameUC As String
   firstField As Long
   lastField As Long
 End Type
@@ -30,8 +31,8 @@ End Sub
 Sub getListOfObjects()
 numObjToMod = 2
 ReDim objToMod(numObjToMod)
-objToMod(1).name = "LIGHTS"
-objToMod(2).name = "FENESTRATIONSURFACE:DETAILED"
+objToMod(1).nameUC = "LIGHTS"
+objToMod(2).nameUC = "FENESTRATIONSURFACE:DETAILED"
 End Sub
 
 Sub readIDF()
@@ -85,7 +86,7 @@ Do While Not EOF(InFN)
             objParts = Split(objString, ",")
             'MsgBox objParts(0)
             For iNumObjToMod = 1 To numObjToMod
-                If UCase(objParts(0)) = objToMod(iNumObjToMod).name Then
+                If UCase(objParts(0)) = objToMod(iNumObjToMod).nameUC Then
                     found = True
                     numIdfObjectStrings = numIdfObjectStrings + 1
                     If numIdfObjectStrings > sizeIdfObjectStrings Then
@@ -131,10 +132,11 @@ Do While Not EOF(iddFN)
     lineCount = lineCount + 1
     If Not withinObject Then
         For iObj = 1 To numObjToMod
-            If UCase(fileLine) = objToMod(iObj).name + "," Then
+            If UCase(fileLine) = objToMod(iObj).nameUC + "," Then
                 withinObject = True
                 objFound = iObj
-                Debug.Print "found", objToMod(iObj).name, lineCount
+                objToMod(iObj).name = Left(fileLine, Len(fileLine) - 1)
+                Debug.Print "found: "; objToMod(iObj).name; " at: "; lineCount
             End If
         Next iObj
     Else 'within the object
@@ -145,7 +147,7 @@ Do While Not EOF(iddFN)
             iddField(numIddFields) = fieldNm
             If objToMod(objFound).firstField = 0 Then objToMod(objFound).firstField = numIddFields
             objToMod(objFound).lastField = numIddFields
-            Debug.Print "field["; fieldNm; "]"
+            'Debug.Print "field["; fieldNm; "]"
         End If
         'switch to outside of object if semicolon is found
         posSlash = InStr(fileLine, "\")
@@ -175,17 +177,21 @@ Dim nRow As Long
 Dim nCol As Long
 Dim maxRowsForObj As Long
 Dim fieldStart As Long
+Dim numOfFieldsInObj As Long
+Dim formulaRowOffset As Long
 
 Application.ScreenUpdating = False
 nRow = 10
 For kObjToMod = 1 To numObjToMod
     maxRowsForObj = 0
     nCol = 3
+    ' write the ORIGINAL rows
+    Cells(nRow + 1, 2).Value = objToMod(kObjToMod).name + " [ORIGINAL]"
     For iObj = 1 To numIdfObjectStrings
         pieces = Split(idfObjectStrings(iObj), ",")
-        If UCase(pieces(0)) = objToMod(kObjToMod).name Then
+        If UCase(pieces(0)) = objToMod(kObjToMod).nameUC Then
             nCol = nCol + 1
-            For jField = LBound(pieces) To UBound(pieces)
+            For jField = 1 To UBound(pieces)
                 Cells(nRow + jField, nCol).Value = pieces(jField)
             Next jField
             If UBound(pieces) > maxRowsForObj Then
@@ -198,7 +204,27 @@ For kObjToMod = 1 To numObjToMod
     For jField = 0 To maxRowsForObj - 1
         Cells(nRow + jField + 1, 3).Value = iddField(fieldStart + jField)
     Next jField
-    nRow = nRow + maxRowsForObj + 5
+    formulaRowOffset = maxRowsForObj + 3
+    nRow = nRow + formulaRowOffset
+    ' now write the REVISED rows
+    Cells(nRow + 1, 2).Value = objToMod(kObjToMod).name + " [REVISED]"
+    numOfFieldsInObj = 1 + objToMod(kObjToMod).lastField - objToMod(kObjToMod).firstField
+    'put in the field names - go all the way to the end of the object
+    For jField = 0 To (numOfFieldsInObj - 1)
+        Cells(nRow + jField + 1, 3).Value = iddField(fieldStart + jField)
+    Next jField
+    ' insert formulas
+    nCol = 3
+    For iObj = 1 To numIdfObjectStrings
+        pieces = Split(idfObjectStrings(iObj), ",")
+        If UCase(pieces(0)) = objToMod(kObjToMod).nameUC Then
+            nCol = nCol + 1
+            For jField = 1 To UBound(pieces)
+                Cells(nRow + jField, nCol).Formula = "=R[" + Trim(Str(-formulaRowOffset)) + "]C[0]"
+            Next jField
+        End If
+    Next iObj
+    nRow = nRow + numOfFieldsInObj + 5
 Next kObjToMod
 Application.ScreenUpdating = True
 End Sub
