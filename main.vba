@@ -9,24 +9,39 @@ Dim originalFileName As String
 Dim revisedFileName As String
 
 Type IDDobj
-  name As String
-  nameUC As String
-  firstField As Long
-  lastField As Long
-  revisedRow As Long
-  revisedCol As Long
+    name As String
+    nameUC As String
+    firstField As Long
+    lastField As Long
+    revisedRow As Long
+    revisedCol As Long
 End Type
-
-Const modeRead = 1
-Const modeWrite = 2
-
 Dim objToMod() As IDDobj
 Dim numObjToMod As Integer
 Dim sizeObjToMod As Integer
 
-Dim iddField() As String
+Type IDDfieldType
+    name As String
+    unitIndex As Long
+End Type
+Dim IDDfield() As IDDfieldType
 Dim numIddFields As Long
 Dim sizeIddFields As Long
+
+Type unitsType
+    siName As String
+    ipName As String
+    multiplier As Double
+    offset As Double
+End Type
+Dim units() As unitsType
+Dim numUnits As Long
+Dim sizeUnits As Long
+
+Const modeRead = 1
+Const modeWrite = 2
+
+
 
 Dim idfObjectStrings() As String
 Dim numIdfObjectStrings As Long
@@ -211,13 +226,49 @@ Dim posField As Long
 Dim numObjFound As Long
 Dim objFound As Long
 
+Dim curSI As String
+Dim curIP As String
+Dim curMult As String
+numUnits = 0
+sizeUnits = 150
+ReDim units(sizeUnits)
+
 numIddFields = 0
 sizeIddFields = 2000
-ReDim iddField(sizeIddFields)
+ReDim IDDfield(sizeIddFields)
 
 numObjFound = 0
 iddFN = FreeFile()
 Open iddFileName For Input As iddFN
+' read the unit conversions as the top of the IDD fiel
+Do While Not EOF(iddFN)
+    Line Input #iddFN, fileLine ' read in data 1 line at a time
+    lineCount = lineCount + 1
+    If Left(fileLine, 1) = "!" Then
+        If Mid(fileLine, 31, 2) = "=>" Then
+            'Debug.Print fileLine
+            curSI = Trim(Mid(fileLine, 2, 28))
+            curIP = Trim(Mid(fileLine, 33, 20))
+            curMult = Trim(Mid(fileLine, 55))
+            numUnits = numUnits + 1
+            units(numUnits).siName = curSI
+            units(numUnits).ipName = curIP
+            If curSI = "C" And curIP = "F" Then
+                units(numUnits).multiplier = 1.8
+                units(numUnits).offset = 32
+            Else
+                units(numUnits).multiplier = Val(curMult)
+                units(numUnits).offset = 0
+            End If
+            'Debug.Print curSI, curIP, curMult
+        End If
+    Else
+        Exit Do
+    End If
+Loop 'not eof(iddfn)
+Debug.Print "Number of units: ", numUnits
+
+' read the objects and fields
 withinObject = False
 Do While Not EOF(iddFN)
     Line Input #iddFN, fileLine ' read in data 1 line at a time
@@ -234,11 +285,25 @@ Do While Not EOF(iddFN)
     Else 'within the object
         posField = InStr(fileLine, "\field")
         If posField > 0 Then
+            curSI = ""
+            curIP = ""
             fieldNm = Mid(fileLine, posField + 7)
             numIddFields = numIddFields + 1
-            iddField(numIddFields) = fieldNm
+            IDDfield(numIddFields).name = fieldNm
             If objToMod(objFound).firstField = 0 Then objToMod(objFound).firstField = numIddFields
             objToMod(objFound).lastField = numIddFields
+        End If
+        posField = InStr(fileLine, "\units")
+        If posField > 0 Then
+            curSI = Trim(Mid(fileLine, posField + 7))
+            IDDfield(numIddFields).unitIndex = getUnits(curSI, curIP)
+            'Debug.Print "\units", curSI, curIP, IDDfield(numIddFields).unitIndex
+        End If
+        posField = InStr(fileLine, "\ip-units")
+        If posField > 0 Then
+            curIP = Trim(Mid(fileLine, posField + 10))
+            IDDfield(numIddFields).unitIndex = getUnits(curSI, curIP)
+            'Debug.Print "\ip-units", curSI, curIP, IDDfield(numIddFields).unitIndex
         End If
         'switch to outside of object if semicolon is found
         posSlash = InStr(fileLine, "\")
@@ -258,6 +323,29 @@ Debug.Print "last line scanned in IDD: " & lineCount
 Close iddFN
 End Sub
 
+Function getUnits(SIstring, IPstring) As Long
+Dim found As Long
+Dim i As Long
+found = 0
+If SIstring <> "" And IPstring <> "" Then
+    For i = 1 To numUnits
+        If SIstring = units(i).siName And IPstring = units(i).ipName Then
+            found = i
+            Exit For
+        End If
+    Next i
+ElseIf SIstring <> "" Then
+    For i = 1 To numUnits
+        If SIstring = units(i).siName Then
+            found = i
+            Exit For
+        End If
+    Next i
+Else
+    found = 0
+End If
+getUnits = found
+End Function
 
 Sub putObjectsOnTab()
 Dim iObj As Long
@@ -277,7 +365,7 @@ Application.ScreenUpdating = False
 nRow = 10
 For kObjToMod = 1 To numObjToMod
     maxRowsForObj = 0
-    nCol = 3
+    nCol = 4
     ' write the ORIGINAL rows
     Cells(nRow + 1, 2).Value = objToMod(kObjToMod).name + " [ORIGINAL]"
     For iObj = 1 To numIdfObjectStrings
@@ -295,7 +383,8 @@ For kObjToMod = 1 To numObjToMod
     'put in the field names
     fieldStart = objToMod(kObjToMod).firstField
     For jField = 0 To maxRowsForObj - 1
-        Cells(nRow + jField + 1, 3).Value = iddField(fieldStart + jField)
+        Cells(nRow + jField + 1, 3).Value = IDDfield(fieldStart + jField).name
+        Cells(nRow + jField + 1, 4).Value = units(IDDfield(fieldStart + jField).unitIndex).siName
     Next jField
     formulaRowOffset = maxRowsForObj + 3
     simpleCopyFormula = "=R[" + Trim(Str(-formulaRowOffset)) + "]C[0]"
@@ -305,10 +394,11 @@ For kObjToMod = 1 To numObjToMod
     numOfFieldsInObj = 1 + objToMod(kObjToMod).lastField - objToMod(kObjToMod).firstField
     'put in the field names - go all the way to the end of the object
     For jField = 0 To (numOfFieldsInObj - 1)
-        Cells(nRow + jField + 1, 3).Value = iddField(fieldStart + jField)
+        Cells(nRow + jField + 1, 3).Value = IDDfield(fieldStart + jField).name
+        Cells(nRow + jField + 1, 4).Value = units(IDDfield(fieldStart + jField).unitIndex).siName
     Next jField
     ' insert formulas
-    nCol = 3
+    nCol = 4
     objToMod(kObjToMod).revisedCol = nCol + 1
     objToMod(kObjToMod).revisedRow = nRow + 1
     For iObj = 1 To numIdfObjectStrings
@@ -385,7 +475,12 @@ If colIndex > 0 Then
         If jField = lastFieldOut Then commaOrSemi = ";"
         valueOfCellString = Trim(Cells(nameRow + jField, colIndex).Value)
         If valueOfCellString = "0" And pieces(jField + 1) = "" Then valueOfCellString = ""
-        Print #OutFN, "    "; valueOfCellString; commaOrSemi; Tab(30); "!- "; iddField(fieldStart + jField)
+        Print #OutFN, "    "; valueOfCellString; commaOrSemi; Tab(30); "!- "; IDDfield(fieldStart + jField).name;
+        If IDDfield(fieldStart + jField).unitIndex <> 0 Then
+            Print #OutFN, " {"; units(IDDfield(fieldStart + jField).unitIndex).siName; "}"
+        Else
+            Print #OutFN, ""
+        End If
     Next jField
 End If
 End Sub
