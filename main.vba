@@ -1,6 +1,5 @@
-' change background color of formulas that are not direct
-' add units
 ' add unit conversions
+' training
 
 Option Explicit
 
@@ -387,7 +386,7 @@ For kObjToMod = 1 To numObjToMod
         Cells(nRow + jField + 1, 4).Value = units(IDDfield(fieldStart + jField).unitIndex).siName
     Next jField
     formulaRowOffset = maxRowsForObj + 3
-    simpleCopyFormula = "=R[" + Trim(Str(-formulaRowOffset)) + "]C[0]"
+    simpleCopyFormula = "=R[" + Trim(Str(-formulaRowOffset)) + "]C"
     nRow = nRow + formulaRowOffset
     ' now write the REVISED rows
     Cells(nRow + 1, 2).Value = objToMod(kObjToMod).name + " [REVISED]"
@@ -406,9 +405,13 @@ For kObjToMod = 1 To numObjToMod
         If UCase(pieces(0)) = objToMod(kObjToMod).nameUC Then
             nCol = nCol + 1
             For jField = 1 To UBound(pieces)
-                origCellFormula = Cells(nRow + jField, nCol).Formula
+                origCellFormula = Cells(nRow + jField, nCol).FormulaR1C1
+                Debug.Print origCellFormula, simpleCopyFormula
+                Cells(nRow + jField, nCol).Interior.ColorIndex = 0
                 If origCellFormula = "" Or origCellFormula = simpleCopyFormula Then
                     Cells(nRow + jField, nCol).Formula = simpleCopyFormula
+                Else
+                    Cells(nRow + jField, nCol).Interior.Color = RGB(240, 240, 240)
                 End If
             Next jField
         End If
